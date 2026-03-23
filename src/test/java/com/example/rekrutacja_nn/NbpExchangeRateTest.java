@@ -1,14 +1,38 @@
 package com.example.rekrutacja_nn;
 
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.springframework.web.client.RestTemplate;
 
+import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.security.cert.X509Certificate;
 import java.util.Optional;
 
 class NbpExchangeRateTest {
 
-    private final AccountService accountService = new AccountService(null);
+    private static AccountService accountService;
+
+    @BeforeAll
+    static void setUp() throws Exception {
+        TrustManager[] trustAll = new TrustManager[]{
+                new X509TrustManager() {
+                    public X509Certificate[] getAcceptedIssuers() { return null; }
+                    public void checkClientTrusted(X509Certificate[] c, String a) {}
+                    public void checkServerTrusted(X509Certificate[] c, String a) {}
+                }
+        };
+        SSLContext sslContext = SSLContext.getInstance("TLS");
+        sslContext.init(null, trustAll, new java.security.SecureRandom());
+        HttpsURLConnection.setDefaultSSLSocketFactory(sslContext.getSocketFactory());
+        HttpsURLConnection.setDefaultHostnameVerifier((h, s) -> true);
+
+        accountService = new AccountService(null, new RestTemplate());
+    }
 
     @Test
     void testGetExchangeRate_plnToUsd() {

@@ -12,6 +12,7 @@ import java.math.BigDecimal;
 @Table(name = "balances")
 public class Balance {
     @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @ManyToOne(optional = false)

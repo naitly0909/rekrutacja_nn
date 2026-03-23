@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.web.client.RestTemplate;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -22,11 +23,14 @@ class AccountServiceTest {
     @Mock
     private AccountRepository accountRepository;
 
+    @Mock
+    private RestTemplate restTemplate;
+
     private AccountService accountService;
 
     @BeforeEach
     void setUp() {
-        accountService = spy(new AccountService(accountRepository));
+        accountService = spy(new AccountService(accountRepository, restTemplate));
     }
 
     // === createAccount ===
@@ -75,7 +79,7 @@ class AccountServiceTest {
         when(accountRepository.findByAccountId("unknown")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> accountService.getAccount("unknown"))
-                .isInstanceOf(RuntimeException.class)
+                .isInstanceOf(AccountNotFoundException.class)
                 .hasMessageContaining("Account not found");
     }
 
@@ -88,8 +92,8 @@ class AccountServiceTest {
         ChangeCurrencyRequest request = new ChangeCurrencyRequest(
                 "unknown", Currency.PLN, Currency.USD, new BigDecimal("100.00"));
 
-        assertThatThrownBy(() -> accountService.changeCurrency(request))
-                .isInstanceOf(RuntimeException.class)
+        assertThatThrownBy(() -> accountService.changeCurrency("unknown", request))
+                .isInstanceOf(AccountNotFoundException.class)
                 .hasMessageContaining("Account not found");
     }
 
@@ -101,9 +105,8 @@ class AccountServiceTest {
         ChangeCurrencyRequest request = new ChangeCurrencyRequest(
                 "abc-123", Currency.USD, Currency.PLN, new BigDecimal("100.00"));
 
-        assertThatThrownBy(() -> accountService.changeCurrency(request))
-                .isInstanceOf(RuntimeException.class)
-                .hasMessageContaining("Balance not found for currency: USD");
+        assertThatThrownBy(() -> accountService.changeCurrency("abc-123", request))
+                .isInstanceOf(InsufficientFundsException.class);
     }
 
     @Test
@@ -114,54 +117,44 @@ class AccountServiceTest {
         ChangeCurrencyRequest request = new ChangeCurrencyRequest(
                 "abc-123", Currency.PLN, Currency.USD, new BigDecimal("100.00"));
 
-        assertThatThrownBy(() -> accountService.changeCurrency(request))
-                .isInstanceOf(RuntimeException.class)
+        assertThatThrownBy(() -> accountService.changeCurrency("abc-123", request))
+                .isInstanceOf(InsufficientFundsException.class)
                 .hasMessageContaining("Not enough money");
     }
 
     @Test
     void changeCurrency_plnToUsd_success() {
-        // konto z 1000 PLN
         Account account = createTestAccount("abc-123", "Jan", "Kowalski", Currency.PLN, new BigDecimal("1000.00"));
         when(accountRepository.findByAccountId("abc-123")).thenReturn(Optional.of(account));
 
-        // kurs PLN→USD = 0.25 (1 PLN = 0.25 USD)
         doReturn(Optional.of(new BigDecimal("0.25")))
                 .when(accountService).getExchangeRate(Currency.PLN, Currency.USD);
 
         ChangeCurrencyRequest request = new ChangeCurrencyRequest(
                 "abc-123", Currency.PLN, Currency.USD, new BigDecimal("400.00"));
 
-        AccountResponse response = accountService.changeCurrency(request);
+        AccountResponse response = accountService.changeCurrency("abc-123", request);
 
-        // 1000 - 400 = 600 PLN
         assertThat(response.balances().get(Currency.PLN)).isEqualByComparingTo(new BigDecimal("600.00"));
-        // 400 * 0.25 = 100 USD
         assertThat(response.balances().get(Currency.USD)).isEqualByComparingTo(new BigDecimal("100.00"));
-
         verify(accountRepository).save(account);
     }
 
     @Test
     void changeCurrency_usdToPln_success() {
-        // konto z 200 USD
         Account account = createTestAccount("abc-123", "Jan", "Kowalski", Currency.USD, new BigDecimal("200.00"));
         when(accountRepository.findByAccountId("abc-123")).thenReturn(Optional.of(account));
 
-        // kurs USD→PLN = 4.0 (1 USD = 4 PLN)
         doReturn(Optional.of(new BigDecimal("4.00")))
                 .when(accountService).getExchangeRate(Currency.USD, Currency.PLN);
 
         ChangeCurrencyRequest request = new ChangeCurrencyRequest(
                 "abc-123", Currency.USD, Currency.PLN, new BigDecimal("50.00"));
 
-        AccountResponse response = accountService.changeCurrency(request);
+        AccountResponse response = accountService.changeCurrency("abc-123", request);
 
-        // 200 - 50 = 150 USD
         assertThat(response.balances().get(Currency.USD)).isEqualByComparingTo(new BigDecimal("150.00"));
-        // 50 * 4.0 = 200 PLN
         assertThat(response.balances().get(Currency.PLN)).isEqualByComparingTo(new BigDecimal("200.00"));
-
         verify(accountRepository).save(account);
     }
 
@@ -183,4 +176,3 @@ class AccountServiceTest {
         return account;
     }
 }
-

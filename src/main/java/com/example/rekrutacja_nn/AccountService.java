@@ -4,12 +4,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
 
-import javax.net.ssl.HttpsURLConnection;
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.TrustManager;
-import javax.net.ssl.X509TrustManager;
 import java.math.BigDecimal;
-import java.security.cert.X509Certificate;
+import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -19,39 +15,17 @@ import java.util.stream.Collectors;
 @Service
 public class AccountService {
 
+    private static final String NBP_API_URL = "https://api.nbp.pl/api/exchangerates/rates/a/{currency}/?format=json";
+
     private final AccountRepository accountRepository;
     private final RestTemplate restTemplate;
 
-    public AccountService(AccountRepository accountRepository) {
+    public AccountService(AccountRepository accountRepository, RestTemplate restTemplate) {
         this.accountRepository = accountRepository;
-        this.restTemplate = createRestTemplate();
+        this.restTemplate = restTemplate;
     }
 
-    private RestTemplate createRestTemplate() {
-        try {
-            TrustManager[] trustAll = new TrustManager[]{
-                    new X509TrustManager() {
-                        public X509Certificate[] getAcceptedIssuers() {
-                            return null;
-                        }
-
-                        public void checkClientTrusted(X509Certificate[] certs, String authType) {
-                        }
-
-                        public void checkServerTrusted(X509Certificate[] certs, String authType) {
-                        }
-                    }
-            };
-            SSLContext sslContext = SSLContext.getInstance("TLS");
-            sslContext.init(null, trustAll, new java.security.SecureRandom());
-            HttpsURLConnection.setDefaultSSLSocketFactory(sslContext.getSocketFactory());
-            HttpsURLConnection.setDefaultHostnameVerifier((hostname, session) -> true);
-            return new RestTemplate();
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to create RestTemplate", e);
-        }
-    }
-
+    @Transactional
     public AccountResponse createAccount(AccountRequest request) {
         Account account = new Account();
         account.setAccountId(UUID.randomUUID().toString());
@@ -59,8 +33,67 @@ public class AccountService {
         account.setLastName(request.lastName());
         account.setBalances(new ArrayList<>(List.of(createInitialBalance(account, request))));
         accountRepository.save(account);
-
         return mapToResponse(account);
+    }
+
+    public AccountResponse getAccount(String accountId) {
+        Account account = findAccount(accountId);
+        return mapToResponse(account);
+    }
+
+    @Transactional
+    public AccountResponse changeCurrency(String accountId, ChangeCurrencyRequest request) {
+        Account account = findAccount(accountId);
+
+        Balance sourceBalance = account.getBalances().stream()
+                .filter(b -> b.getCurrency() == request.fromCurrency())
+                .findFirst()
+                .orElseThrow(() -> new InsufficientFundsException(request.fromCurrency()));
+
+        if (sourceBalance.getAmount().compareTo(request.amount()) < 0) {
+            throw new InsufficientFundsException(request.fromCurrency());
+        }
+
+        BigDecimal rate = getExchangeRate(request.fromCurrency(), request.toCurrency())
+                .orElseThrow(() -> new ExchangeRateException(request.fromCurrency()));
+
+        BigDecimal convertedAmount = request.amount().multiply(rate).setScale(2, RoundingMode.HALF_UP);
+
+        sourceBalance.setAmount(sourceBalance.getAmount().subtract(request.amount()));
+        addToTargetBalance(account, request.toCurrency(), convertedAmount);
+
+        accountRepository.save(account);
+        return mapToResponse(account);
+    }
+
+
+    private Account findAccount(String accountId) {
+        return accountRepository.findByAccountId(accountId)
+                .orElseThrow(() -> new AccountNotFoundException(accountId));
+    }
+
+    private Balance createInitialBalance(Account account, AccountRequest request) {
+        Balance balance = new Balance();
+        balance.setCurrency(Currency.PLN);
+        balance.setAmount(request.initialBalancePln());
+        balance.setAccount(account);
+        return balance;
+    }
+
+    private void addToTargetBalance(Account account, Currency toCurrency, BigDecimal convertedAmount) {
+        Optional<Balance> existing = account.getBalances().stream()
+                .filter(b -> b.getCurrency() == toCurrency)
+                .findFirst();
+
+        if (existing.isPresent()) {
+            existing.get().setAmount(existing.get().getAmount().add(convertedAmount));
+        } else {
+            Balance newBalance = new Balance();
+            newBalance.setCurrency(toCurrency);
+            newBalance.setAmount(convertedAmount);
+            newBalance.setAccount(account);
+            account.getBalances().add(newBalance);
+        }
     }
 
     private AccountResponse mapToResponse(Account account) {
@@ -73,81 +106,21 @@ public class AccountService {
         );
     }
 
-    private Balance createInitialBalance(Account account, AccountRequest request) {
-        Balance balance = new Balance();
-        balance.setCurrency(Currency.PLN);
-        balance.setAmount(request.initialBalancePln());
-        balance.setAccount(account);
-        return balance;
-    }
-
-    public AccountResponse getAccount(String accountId) {
-        Account account = accountRepository.findByAccountId(accountId)
-                .orElseThrow(() -> new RuntimeException("Account not found"));
-        return mapToResponse(account);
-    }
-
-    @Transactional
-    public AccountResponse changeCurrency(ChangeCurrencyRequest request) {
-
-        Account account = accountRepository.findByAccountId(request.accountId())
-                .orElseThrow(() -> new RuntimeException("Account not found"));
-
-        Balance balance = account.getBalances().stream()
-                .filter(b -> b.getCurrency() == request.fromCurrency())
-                .findFirst()
-                .orElseThrow(() -> new RuntimeException("Balance not found for currency: " + request.fromCurrency().toString()));
-
-        if (balance.getAmount().compareTo(request.amount()) < 0) {
-            throw new RuntimeException("Not enough money in balance for currency: " + request.fromCurrency().toString());
-        }
-
-        BigDecimal rate = getExchangeRate(request.fromCurrency(), request.toCurrency())
-                .orElseThrow(() -> new RuntimeException("Exchange rate not found for currency: " + request.fromCurrency()));
-
-        BigDecimal convertedAmount = request.amount().multiply(rate);
-        changeBalance(balance, request.amount(), request.toCurrency(), convertedAmount, account);
-        accountRepository.save(account);
-
-        return mapToResponse(account);
-    }
-
-    private void changeBalance(Balance sourceBalance, BigDecimal amount, Currency toCurrency, BigDecimal convertedAmount, Account account) {
-        sourceBalance.setAmount(sourceBalance.getAmount().subtract(amount));
-
-        account.getBalances().stream()
-                .filter(b -> b.getCurrency() == toCurrency)
-                .findFirst()
-                .orElseGet(() -> {
-                    Balance newBalance = new Balance();
-                    newBalance.setCurrency(toCurrency);
-                    newBalance.setAmount(convertedAmount);
-                    newBalance.setAccount(account);
-                    account.getBalances().add(newBalance);
-                    return newBalance;
-                });
-
-    }
-
     Optional<BigDecimal> getExchangeRate(Currency fromCurrency, Currency toCurrency) {
-
         if (fromCurrency == toCurrency) {
             return Optional.of(BigDecimal.ONE);
         }
+
         Currency foreignCurrency = (fromCurrency == Currency.PLN) ? toCurrency : fromCurrency;
 
-        NbpResponse response = restTemplate.getForObject(
-                "https://api.nbp.pl/api/exchangerates/rates/a/{foreignCurrency}/?format=json",
-                NbpResponse.class,
-                foreignCurrency.toString()
-        );
+        NbpResponse response = restTemplate.getForObject(NBP_API_URL, NbpResponse.class, foreignCurrency.toString());
         if (response == null) {
-            throw new RuntimeException("Failed to fetch exchange rate for currency: " + foreignCurrency);
+            throw new ExchangeRateException(foreignCurrency);
         }
 
         return response.getMidForCurrency().map(mid -> {
             if (fromCurrency == Currency.PLN) {
-                return BigDecimal.ONE.divide(mid, 6, java.math.RoundingMode.HALF_UP);
+                return BigDecimal.ONE.divide(mid, 6, RoundingMode.HALF_UP);
             } else {
                 return mid;
             }

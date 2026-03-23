@@ -25,10 +25,10 @@ class AccountControllerTest {
     @InjectMocks
     private AccountController accountController;
 
-    // === POST /account/create ===
+    // === POST /api/accounts ===
 
     @Test
-    void createAccount_returns200_andCorrectBody() {
+    void createAccount_returnsCreated_andCorrectBody() {
         AccountResponse mockResponse = new AccountResponse(
                 "abc-123", "Jan", "Kowalski",
                 Map.of(Currency.PLN, new BigDecimal("1000.00"))
@@ -38,7 +38,7 @@ class AccountControllerTest {
         AccountRequest request = new AccountRequest("Jan", "Kowalski", new BigDecimal("1000.00"));
         ResponseEntity<AccountResponse> response = accountController.createAccount(request);
 
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().accountId()).isEqualTo("abc-123");
         assertThat(response.getBody().firstName()).isEqualTo("Jan");
@@ -48,7 +48,7 @@ class AccountControllerTest {
         verify(accountService).createAccount(any(AccountRequest.class));
     }
 
-    // === POST /account/change ===
+    // === POST /api/accounts/{accountId}/exchange ===
 
     @Test
     void changeCurrency_returns200_andCorrectBody() {
@@ -56,11 +56,11 @@ class AccountControllerTest {
                 "abc-123", "Jan", "Kowalski",
                 Map.of(Currency.PLN, new BigDecimal("900.00"), Currency.USD, new BigDecimal("25.00"))
         );
-        when(accountService.changeCurrency(any(ChangeCurrencyRequest.class))).thenReturn(mockResponse);
+        when(accountService.changeCurrency(eq("abc-123"), any(ChangeCurrencyRequest.class))).thenReturn(mockResponse);
 
         ChangeCurrencyRequest request = new ChangeCurrencyRequest(
                 "abc-123", Currency.PLN, Currency.USD, new BigDecimal("100.00"));
-        ResponseEntity<AccountResponse> response = accountController.changeCurrency(request);
+        ResponseEntity<AccountResponse> response = accountController.changeCurrency("abc-123", request);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();
@@ -68,24 +68,24 @@ class AccountControllerTest {
         assertThat(response.getBody().balances()).containsEntry(Currency.PLN, new BigDecimal("900.00"));
         assertThat(response.getBody().balances()).containsEntry(Currency.USD, new BigDecimal("25.00"));
 
-        verify(accountService).changeCurrency(any(ChangeCurrencyRequest.class));
+        verify(accountService).changeCurrency(eq("abc-123"), any(ChangeCurrencyRequest.class));
     }
 
     @Test
     void changeCurrency_notEnoughMoney_throwsException() {
-        when(accountService.changeCurrency(any(ChangeCurrencyRequest.class)))
-                .thenThrow(new RuntimeException("Not enough money in balance for currency: PLN"));
+        when(accountService.changeCurrency(eq("abc-123"), any(ChangeCurrencyRequest.class)))
+                .thenThrow(new InsufficientFundsException(Currency.PLN));
 
         ChangeCurrencyRequest request = new ChangeCurrencyRequest(
                 "abc-123", Currency.PLN, Currency.USD, new BigDecimal("999999.00"));
 
-        org.junit.jupiter.api.Assertions.assertThrows(RuntimeException.class,
-                () -> accountController.changeCurrency(request));
+        org.junit.jupiter.api.Assertions.assertThrows(InsufficientFundsException.class,
+                () -> accountController.changeCurrency("abc-123", request));
 
-        verify(accountService).changeCurrency(any(ChangeCurrencyRequest.class));
+        verify(accountService).changeCurrency(eq("abc-123"), any(ChangeCurrencyRequest.class));
     }
 
-    // === GET /account/{accountId} ===
+    // === GET /api/accounts/{accountId} ===
 
     @Test
     void getAccount_returns200_andCorrectBody() {
@@ -110,9 +110,9 @@ class AccountControllerTest {
     @Test
     void getAccount_notFound_throwsException() {
         when(accountService.getAccount("unknown"))
-                .thenThrow(new RuntimeException("Account not found"));
+                .thenThrow(new AccountNotFoundException("unknown"));
 
-        org.junit.jupiter.api.Assertions.assertThrows(RuntimeException.class,
+        org.junit.jupiter.api.Assertions.assertThrows(AccountNotFoundException.class,
                 () -> accountController.getAccount("unknown"));
 
         verify(accountService).getAccount(eq("unknown"));
