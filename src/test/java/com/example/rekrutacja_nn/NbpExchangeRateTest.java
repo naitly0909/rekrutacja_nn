@@ -1,5 +1,6 @@
 package com.example.rekrutacja_nn;
 
+import com.example.rekrutacja_nn.models.Currency;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.client.RestTemplate;

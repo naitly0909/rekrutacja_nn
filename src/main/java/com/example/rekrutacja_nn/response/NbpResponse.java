@@ -1,4 +1,4 @@
-package com.example.rekrutacja_nn;
+package com.example.rekrutacja_nn.response;
 
 import java.math.BigDecimal;
 import java.util.List;

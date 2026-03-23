@@ -1,4 +1,6 @@
-package com.example.rekrutacja_nn;
+package com.example.rekrutacja_nn.response;
+
+import com.example.rekrutacja_nn.models.Currency;
 
 import java.math.BigDecimal;
 import java.util.Map;

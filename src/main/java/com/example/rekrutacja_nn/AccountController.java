@@ -1,5 +1,8 @@
 package com.example.rekrutacja_nn;
 
+import com.example.rekrutacja_nn.requests.AccountRequest;
+import com.example.rekrutacja_nn.requests.ChangeCurrencyRequest;
+import com.example.rekrutacja_nn.response.AccountResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;

@@ -1,5 +1,6 @@
-package com.example.rekrutacja_nn;
+package com.example.rekrutacja_nn.requests;
 
+import com.example.rekrutacja_nn.models.Currency;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;

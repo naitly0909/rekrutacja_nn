@@ -1,4 +1,4 @@
-package com.example.rekrutacja_nn;
+package com.example.rekrutacja_nn.models;
 
 import jakarta.persistence.*;
 import lombok.Getter;

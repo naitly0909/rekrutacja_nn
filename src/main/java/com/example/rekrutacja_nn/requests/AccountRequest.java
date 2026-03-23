@@ -1,4 +1,4 @@
-package com.example.rekrutacja_nn;
+package com.example.rekrutacja_nn.requests;
 
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;

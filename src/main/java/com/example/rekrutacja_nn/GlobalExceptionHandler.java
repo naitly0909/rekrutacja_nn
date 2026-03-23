@@ -1,5 +1,8 @@
 package com.example.rekrutacja_nn;
 
+import com.example.rekrutacja_nn.exceptions.AccountNotFoundException;
+import com.example.rekrutacja_nn.exceptions.ExchangeRateException;
+import com.example.rekrutacja_nn.exceptions.InsufficientFundsException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
