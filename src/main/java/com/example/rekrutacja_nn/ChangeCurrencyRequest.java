@@ -7,7 +7,7 @@ import jakarta.validation.constraints.NotNull;
 import java.math.BigDecimal;
 
 public record ChangeCurrencyRequest(@NotBlank String accountId,
-                                    @NotBlank String fromCurrency,
-                                    @NotBlank String toCurrency,
+                                    @NotBlank Currency fromCurrency,
+                                    @NotBlank Currency toCurrency,
                                     @NotNull @DecimalMin(value = "0.01") BigDecimal amount) {
 }

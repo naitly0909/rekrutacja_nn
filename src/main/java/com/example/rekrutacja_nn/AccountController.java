@@ -20,9 +20,9 @@ public class AccountController {
     }
 
     @PostMapping("/change")
-    public String changeCurrency(@RequestBody ChangeCurrencyRequest request) {
-        // Logika wymiany waluty
-        return "wymiana waluty zakończona sukcesem";
+    public ResponseEntity<AccountResponse> changeCurrency(@RequestBody ChangeCurrencyRequest request) {
+        AccountResponse response = accountService.changeCurrency(request);
+        return ResponseEntity.ok(response);
     }
 
     @GetMapping("/{accountId}")
