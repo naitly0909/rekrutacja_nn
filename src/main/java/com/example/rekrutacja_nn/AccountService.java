@@ -1,11 +1,15 @@
 package com.example.rekrutacja_nn;
 
-import jakarta.validation.constraints.NotBlank;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
 
+import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
 import java.math.BigDecimal;
+import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -15,10 +19,37 @@ import java.util.stream.Collectors;
 @Service
 public class AccountService {
 
-    AccountRepository accountRepository;
+    private final AccountRepository accountRepository;
+    private final RestTemplate restTemplate;
 
     public AccountService(AccountRepository accountRepository) {
         this.accountRepository = accountRepository;
+        this.restTemplate = createRestTemplate();
+    }
+
+    private RestTemplate createRestTemplate() {
+        try {
+            TrustManager[] trustAll = new TrustManager[]{
+                    new X509TrustManager() {
+                        public X509Certificate[] getAcceptedIssuers() {
+                            return null;
+                        }
+
+                        public void checkClientTrusted(X509Certificate[] certs, String authType) {
+                        }
+
+                        public void checkServerTrusted(X509Certificate[] certs, String authType) {
+                        }
+                    }
+            };
+            SSLContext sslContext = SSLContext.getInstance("TLS");
+            sslContext.init(null, trustAll, new java.security.SecureRandom());
+            HttpsURLConnection.setDefaultSSLSocketFactory(sslContext.getSocketFactory());
+            HttpsURLConnection.setDefaultHostnameVerifier((hostname, session) -> true);
+            return new RestTemplate();
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to create RestTemplate", e);
+        }
     }
 
     public AccountResponse createAccount(AccountRequest request) {
@@ -98,16 +129,28 @@ public class AccountService {
 
     }
 
-    private Optional<BigDecimal> getExchangeRate(@NotBlank Currency fromCurrency, @NotBlank Currency toCurrency) {
-        RestTemplate restTemplate = new RestTemplate();
+    Optional<BigDecimal> getExchangeRate(Currency fromCurrency, Currency toCurrency) {
+
+        if (fromCurrency == toCurrency) {
+            return Optional.of(BigDecimal.ONE);
+        }
+        Currency foreignCurrency = (fromCurrency == Currency.PLN) ? toCurrency : fromCurrency;
+
         NbpResponse response = restTemplate.getForObject(
-                "https://api.nbp.pl/api/exchangerates/rates/a/{currency}/?format=json",
+                "https://api.nbp.pl/api/exchangerates/rates/a/{foreignCurrency}/?format=json",
                 NbpResponse.class,
-                fromCurrency.toString()
+                foreignCurrency.toString()
         );
         if (response == null) {
-            throw new RuntimeException("Failed to fetch exchange rate for currency: " + fromCurrency);
+            throw new RuntimeException("Failed to fetch exchange rate for currency: " + foreignCurrency);
         }
-        return response.getMidForCurrency();
+
+        return response.getMidForCurrency().map(mid -> {
+            if (fromCurrency == Currency.PLN) {
+                return BigDecimal.ONE.divide(mid, 6, java.math.RoundingMode.HALF_UP);
+            } else {
+                return mid;
+            }
+        });
     }
 }
